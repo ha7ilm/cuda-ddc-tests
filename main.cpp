@@ -22,10 +22,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include <Windows.h>
+#include <string.h>
+#ifndef __unix__
+ #include <Windows.h>
+#endif
 
-#define CUCHECK if (cudaStatus != cudaSuccess) { printf("Error at line %d in " __FILE__ "\n", __LINE__ ); goto Error; }
-#define CUCHECK_KERNEL if ((cudaStatus = cudaGetLastError()) != cudaSuccess) {	fprintf(stderr, "Kernel failed: %s\n", cudaGetErrorString(cudaStatus)); goto Error; }
+#define CUCHECK if (cudaStatus != cudaSuccess) { printf("Error at line %d in " __FILE__ "\n", __LINE__ ); goto cuda_error; }
+#define CUCHECK_KERNEL if ((cudaStatus = cudaGetLastError()) != cudaSuccess) {	fprintf(stderr, "Kernel failed: %s\n", cudaGetErrorString(cudaStatus)); goto cuda_error; }
 #define CUSYNC cudaStatus = cudaDeviceSynchronize()
 #define NT 2047
 #define BUFSIZE (1024*128)
@@ -52,6 +55,8 @@ int main(int argc, char *argv[])
 	float* gInput = 0;
 	float* gShifted = 0;
 	float* gOutput = 0;
+
+	int fir_dec_cc_ret;
 
 	//Generating input 
 	printf("Generating input...");
@@ -84,8 +89,8 @@ int main(int argc, char *argv[])
 
 	//FIR_DECIMATE operation:
 	printf("Processing FIR_DECIMATE on CPU...\n");
-	int a = fir_decimate_cc((complexf*)shifted_cpu, (complexf*)output_cpu, BUFSIZE / 2, DECFACT, taps, NT);
-	printf("a=%d\n ",a);
+	fir_dec_cc_ret = fir_decimate_cc((complexf*)shifted_cpu, (complexf*)output_cpu, BUFSIZE / 2, DECFACT, taps, NT);
+	printf("fir_dec_cc_ret=%d\n ",fir_dec_cc_ret);
 
 	printf("Processing FIR_DECIMATE on GPU...\n");
 	fir_decimate_gpu_cc(gShifted, gOutput, BUFSIZE, DECFACT, gTaps, NT); CUCHECK_KERNEL; CUSYNC;
@@ -105,46 +110,64 @@ int main(int argc, char *argv[])
 	}*/
 
 	printf("\nStarting time measurement tests.\nProcessing %d blocks of %d samples.\n", PTN, BUFSIZE);
+#ifndef __unix__
 	LARGE_INTEGER frequency, t1, t2;
 	QueryPerformanceFrequency(&frequency);
+#endif
 
 	cudaProfilerStart();
 
 	if (waitCmd)
 	{
 		printf("Processing SHIFT on CPU...\n");
+#ifndef __unix__
 		QueryPerformanceCounter(&t1);
+#endif
 		for (int i = 0; i < PTN; i++) shift_math_cc((complexf*)input, (complexf*)shifted_cpu, BUFSIZE / 2, SHIFT_RATE, 0);
+#ifndef __unix__
 		QueryPerformanceCounter(&t2);
 		PRINT_ELAPSED;
+#endif
 	}
 
 	printf("Processing SHIFT on GPU...\n");
+#ifndef __unix__
 	QueryPerformanceCounter(&t1);
+#endif
 	for (int i = 0; i < PTN; i++) { shift_gpu_cc(gInput, gShifted, BUFSIZE, SHIFT_RATE, 0); CUSYNC; }
+#ifndef __unix__
 	QueryPerformanceCounter(&t2);
 	PRINT_ELAPSED;
+#endif
 
 	if (waitCmd)
 	{
 		printf("Processing FIR_DECIMATE on CPU...\n");
+#ifndef __unix__
 		QueryPerformanceCounter(&t1);
+#endif
 		for (int i = 0; i < PTN; i++) fir_decimate_cc((complexf*)shifted_cpu, (complexf*)output_cpu, BUFSIZE / 2, DECFACT, taps, NT);
+#ifndef __unix__
 		QueryPerformanceCounter(&t2);
 		PRINT_ELAPSED;
+#endif
 	}
 
 	printf("Processing FIR_DECIMATE on GPU...\n");
+#ifndef __unix__
 	QueryPerformanceCounter(&t1);
+#endif
 	for (int i = 0; i < PTN; i++) { fir_decimate_gpu_cc(gShifted, gOutput, BUFSIZE, DECFACT, gTaps, NT); CUSYNC; }
+#ifndef __unix__
 	QueryPerformanceCounter(&t2);
 	PRINT_ELAPSED;
+#endif
 
 	cudaProfilerStop();
 
 	printf("Ready.\n");
 
-Error:
+cuda_error:
 	cudaFree(gInput);
 	cudaFree(gTaps);
 	cudaFree(gShifted);
